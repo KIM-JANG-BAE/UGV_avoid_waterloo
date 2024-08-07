@@ -150,92 +150,92 @@ def AI_camera_main():
     while True:
         now = datetime.datetime.now()
         filename = now.strftime('%Y-%m-%d-%H-%M-%S')+'.jpg'
-        vilib.take_phote(path, filename)
-        ret, frame = cap.read()
-        if ret == True:
-            cv.imwrite(filename, frame)
-            cv.imshow('frame', traitement(frame))
-        else:
-            break
-    cap.release()
-    cv.destroyAllWindows()
+        # vilib.take_phote(path, filename)
+        # ret, frame = cap.read()
+        # if ret == True:
+        cv.imwrite(filename, frame)
+        #     cv.imshow('frame', traitement(frame))
+        # else:
+        #     break
+    # cap.release()
+    # cv.destroyAllWindows()
 
-def traitement(frame):
-    ligne = 400
-    img = prepareImg(frame)
-    img = reduirBruit(img)
-    mean = meanImg(img)
-    mask = maskImg(img)
-    seuillage = seuilImg(img, mean, mask)
-    direction, valeurRoutation = autoCorrection(seuillage, ligne=ligne)
-    angle = np.arccos(valeurRoutation/(img.shape[0]-ligne))*180/np.pi
-    if direction == 0:
-        offset_s()
-        px.forward(5)
-    elif direction == 1:
-        px.forward(5)
-        px.cam_pan_servo_calibrate(va-angle)
-    elif direction == 2:
-        px.forward(5)
-        px.cam_pan_servo_calibrate(va+angle)
-    else:
-        offset_s()
-        px.forward(5)
-    contourImg = contour(frame, seuillage)
-    return contourImg
+# def traitement(frame):
+#     ligne = 400
+#     img = prepareImg(frame)
+#     img = reduirBruit(img)
+#     mean = meanImg(img)
+#     mask = maskImg(img)
+#     seuillage = seuilImg(img, mean, mask)
+#     direction, valeurRoutation = autoCorrection(seuillage, ligne=ligne)
+#     angle = np.arccos(valeurRoutation/(img.shape[0]-ligne))*180/np.pi
+#     if direction == 0:
+#         offset_s()
+#         px.forward(5)
+#     elif direction == 1:
+#         px.forward(5)
+#         px.cam_pan_servo_calibrate(va-angle)
+#     elif direction == 2:
+#         px.forward(5)
+#         px.cam_pan_servo_calibrate(va+angle)
+#     else:
+#         offset_s()
+#         px.forward(5)
+#     contourImg = contour(frame, seuillage)
+#     return contourImg
 
-def contour(fram, newImg):
-    contours, hierarchy = cv.findContours(image=newImg, mode=cv.RETR_TREE, method=cv.CHAIN_APPROX_NONE)
-    image_draw = fram.copy()
-    cv.drawContours(image=image_draw, contours=contours, contourIdx=-1, color=(0, 0, 0), thickness=5, lineType=cv.LINE_AA)
-    return image_draw
+# def contour(fram, newImg):
+#     contours, hierarchy = cv.findContours(image=newImg, mode=cv.RETR_TREE, method=cv.CHAIN_APPROX_NONE)
+#     image_draw = fram.copy()
+#     cv.drawContours(image=image_draw, contours=contours, contourIdx=-1, color=(0, 0, 0), thickness=5, lineType=cv.LINE_AA)
+#     return image_draw
 
-def autoCorrection(newImg, axe=460, ligne=400):
-    disGauche, disDroit, direction, valeurRoutation = 0, 0, 0, 0
-    m = (np.where(newImg[ligne,:]==255)) # 255는 횐색의 픽셀값
-    pose = [ (m[0][i],m[0][i-1]) for i in range(len(m[0])) if m[0][i]-m[0][i-1]>300]
-    if len(pose)==1:
-        disDroit = np.abs(pose[0][0]-axe)
-        disGauche = np.abs(pose[0][1]-axe)
-        if disGauche > disDroit:
-            direction, valeurRoutation = -1, np.abs(disDroit-disGauche)
-        elif disDroit > disGauche:
-            direction, valeurRoutation = 1, np.abs(disDroit-disGauche)
-        else:
-            direction, valeurRoutation = 0, np.abs(disDroit-disGauche)
-        print(disDroit)
+# def autoCorrection(newImg, axe=460, ligne=400):
+#     disGauche, disDroit, direction, valeurRoutation = 0, 0, 0, 0
+#     m = (np.where(newImg[ligne,:]==255)) # 255는 횐색의 픽셀값
+#     pose = [ (m[0][i],m[0][i-1]) for i in range(len(m[0])) if m[0][i]-m[0][i-1]>300]
+#     if len(pose)==1:
+#         disDroit = np.abs(pose[0][0]-axe)
+#         disGauche = np.abs(pose[0][1]-axe)
+#         if disGauche > disDroit:
+#             direction, valeurRoutation = -1, np.abs(disDroit-disGauche)
+#         elif disDroit > disGauche:
+#             direction, valeurRoutation = 1, np.abs(disDroit-disGauche)
+#         else:
+#             direction, valeurRoutation = 0, np.abs(disDroit-disGauche)
+#         print(disDroit)
         
-    return direction, valeurRoutation
+#     return direction, valeurRoutation
 
 
-def prepareImg(fram):
-    img = cv.cvtColor(fram, cv.COLOR_BGR2GRAY)
-    img = np.array(img)
-    return img
+# def prepareImg(fram):
+#     img = cv.cvtColor(fram, cv.COLOR_BGR2GRAY)
+#     img = np.array(img)
+#     return img
 
-def reduirBruit(img):
-    return cv.bilateralFilter(img, 5, 50, 50)
+# def reduirBruit(img):
+#     return cv.bilateralFilter(img, 5, 50, 50)
 
-def seuilImg(img, mean, masked_img):
-    img = cv.split(img)[0]
-    (_, newImg) = cv.threshold(masked_img, mean + 55, 255, cv.THRESH_BINARY)
-    return newImg
+# def seuilImg(img, mean, masked_img):
+#     img = cv.split(img)[0]
+#     (_, newImg) = cv.threshold(masked_img, mean + 55, 255, cv.THRESH_BINARY)
+#     return newImg
 
-def meanImg(img):
-    means, _ = cv.meanStdDev(img)
-    return int(means[0][0])
+# def meanImg(img):
+#     means, _ = cv.meanStdDev(img)
+#     return int(means[0][0])
 
-def mask(img, v):
-    mask = np.zeros_like(img)
-    chaine_count = 1
-    match_mask_color = (255,) * chaine_count
-    cv.fillPoly(mask, v, match_mask_color)
-    mask_img = cv.bitwise_and(img, mask)
-    return mask_img
+# def mask(img, v):
+#     mask = np.zeros_like(img)
+#     chaine_count = 1
+#     match_mask_color = (255,) * chaine_count
+#     cv.fillPoly(mask, v, match_mask_color)
+#     mask_img = cv.bitwise_and(img, mask)
+#     return mask_img
 
-def maskImg(img):
-    v = [(-50, img.shape[0]), (img.shape[1]/2-60, img.shape[0]/1.6-30), (img.shape[1]/2+20, img.shape[0]/1.6-30), (img.shape[1]+50, img.shape[0])]
-    return mask(img, np.array([v], np.int32),)
+# def maskImg(img):
+#     v = [(-50, img.shape[0]), (img.shape[1]/2-60, img.shape[0]/1.6-30), (img.shape[1]/2+20, img.shape[0]/1.6-30), (img.shape[1]+50, img.shape[0])]
+#     return mask(img, np.array([v], np.int32),)
 
 ##########################################################################
 def socket_main():
