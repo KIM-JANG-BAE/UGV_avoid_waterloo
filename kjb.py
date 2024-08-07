@@ -3,26 +3,30 @@ from time import sleep
 import readchar
 import threading
 import socket
+import cv2
+import pickle
+import struct
 
 class project:
 
     def __init__(self, px):
 
-        print('1')
-
         # 소켓 생성
         self.client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-
-        print('2')
 
         # 서버 주소
         self.server_address = ('172.20.25.42', 5555)
 
-        print('3')
+        # 캘리브레이션을 위한 모터값
+        # 카메라 수평
+        self.camera_head_horizontal = 0
+        # 카메라 수직
+        self.camera_head_vertical = 0
+        # 바퀴
+        self.motor = -8.0  
 
         # 차량 할당
         self.px = px
-        print('4')
 
         # 도로주행 자세제어에 대한 변수 선언
         self.control_picar = None
@@ -47,14 +51,19 @@ class project:
         # 회피기동을 수행함에 있어 각속도에 따른 회피시간 - default : 3 (Unit : sec)
         self.avoid_time = 3
 
+        # 이미지를 저장하는 변수
+        self.image = None
+
+        # Grayscale을 위한 참조변수
+        self.reference = [500, 500, 500]
+
         # Picar-x 객체의 Lock
         self.picar_lock = threading.Lock()
+
 
         # 라즈베리파이 ip, port
         self.client_ip = '172.20.25.30'
         self.client_port = 5555
-
-        print('1')
 
         # 스레드
         t1 = threading.Thread(target=self.read_data)
@@ -68,73 +77,101 @@ class project:
         t3.start()
         t4.start()
 
+    # Grayscale에 맞는 데이터를 할당하는 함수
+    def get_line_status(self):
+        if self.grayscale_value[0] > self.reference[0] and self.grayscale_value[1] > self.reference[1] and self.grayscale_value[2] > self.reference[2]:
+            self.control_picar = 'back'
+
+        elif self.grayscale_value[1] >= self.reference[1]:
+            self.control_picar = 'forward'
+
+        elif self.grayscale_value[0] >= self.reference[0]:
+            self.control_picar = 'right'
+
+        elif self.grayscale_value[2] >= self.reference[2]:
+            self.control_picar = 'left'
+
+        else:
+            self.control_picar = 'forward'
+
+    # 캘리브레이션을 맞추는 함수
+    def offset_picar(self):
+        self.dir_servo_calibrate(self.camera_head_horizontal)
+        self.cam_pan_servo_calibrate(self.motor)
+        self.cam_tilt_servo_calibrate(self.camera_head_vertical)
+
+    # 서버에서 사인에 맞는 명령제어값을 받는 함수
     def receive_header(self):
         pass
 
+    # 서버로 이미지를 전달하는 함수
     def send_data(self):
-        print('2')
         try:
             self.client_socket.connect(self.server_address)
 
             while True:
-                s = 'Hello'
-                self.client_socket.send(s.encode())
+                
+                image = pickle.dumps(self.image)
+                image_size = struct.pack('L', len(image))
+                socket.sendall(image_size + image)
+
+                data = b''
+                payload_size = struct.calcsize('L')
+                
+
+                self.client_socket.send()
 
         except:
             pass
 
+    # Picar-X의 센서 데이터값을 받아오는 함수
     def read_data(self):
         while True:
-            # Lock 획득
-            while True:
-                try:
-                    self.picar_lock.acquire()
-                    break
-                except:
-                    sleep(0.1)
-
-
-            # 명도 값
-            self.grayscale_value = px.get_grayscale_data()
-            # 거리 값
-            self.ultrasonic_value = round(px.ultrasonic.read(), 2)
-
-            # 명도 값을 이용하여 해당 도로주행이 잘이루어지는지, 또한 그렇지 않은 경우 자세제어를 위한 헤더 설정
-            # if self.grayscale_value
-
-            print(f' grayscale : {self.grayscale_value} ultrasonic: {self.ultrasonic_value}')
-
-            # Lock 해제
-            self.picar_lock.release()
-            sleep(0.1)
-
-
-    def align_grayscale(self):
-        while True:
+            
             try:
-                self.picar_lock.acquire()
-                break
+                # 명도 값
+                self.grayscale_value = px.get_grayscale_data()
+                # 거리 값
+                self.ultrasonic_value = round(px.ultrasonic.read(), 2)
+
+                
+                
+                if self.grayscale_flag:
+                    self.get_line_status()
+                    self.align_grayscale()
+
+                print(f' grayscale : {self.grayscale_value} ultrasonic: {self.ultrasonic_value}')
+
+                sleep(0.1)
+            
             except:
+                print('Lock is already acquired')
                 sleep(0.1)
 
-        self.grayscale_flag = False
+    # 헤더값에 맞는 기동을 수행하는 함수
+    def align_grayscale(self):
+
+        motor_run = False
 
         if self.control_picar == 'left':
-            pass
-
+            self.px.forward(5)
+            self.px.cam_pan_servo_calibrate(self.motor+30)
 
         elif self.control_picar == 'right':
-            pass
+            self.px.forward(5)
+            self.px.cam_pan_servo_calibrate(self.motor-30)
+            
+        elif self.control_picar == 'forward':
+            self.offset_picar()
+            self.px.forward(10)
 
-        print('gi')
-        sleep(5)
-
-        self.picar_lock.release()
-
-    # 도로 주행이 잘 수행되는지 판단하는 함수
-    def gray_question(self):
-        if self.grayscale_value and self.grayscale_flag:
-            self.align_grayscale()
+        elif self.control_picar == 'back':
+            if motor_run == False:
+                motor_run = True
+                self.px.forward(-30)
+            else:
+                motor_run = False
+                self.px.stop()
 
 
     # 회피기동 여부를 판단하는 함수
