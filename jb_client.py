@@ -9,7 +9,6 @@ image_path = r"C:\Users\rlawk\OneDrive\Desktop\image.png"
 image_i = cv2.imread(image_path)
 
 
-
 client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 server_add = ('10.33.32.87', 5555)
 
