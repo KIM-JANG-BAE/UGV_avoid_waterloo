@@ -3,21 +3,26 @@ from time import sleep
 import readchar
 import threading
 import socket
-import cv2 as cv
+import cv2
 import pickle
 import struct
-import datetime
-import os 
-import time
+import sys
+import vilib
+import numpy as np
+from PIL import Image
+
 
 class project:
 
     def __init__(self, px):
+
+        self.image_path = '/home/picar-x/2024-08-07-14-31-39.jpg'
+
         # 소켓 생성
         self.client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
         # 서버 주소
-        self.server_address = ('172.20.25.42', 5555)
+        self.server_address = ('172.20.10.10', 5555)
 
         # 캘리브레이션을 위한 모터값
         # 카메라 수평
@@ -27,8 +32,14 @@ class project:
         # 바퀴
         self.motor = -8.0  
 
+        # 이미지를 저장한 여부에 대한 변수 선언
+        self.image_flag = False
+
         # 차량 할당
         self.px = px
+
+        # AI로 인식한 헤더값을 저장하는 변수
+        self.AI_header = None
 
         # 도로주행 자세제어에 대한 변수 선언
         self.control_picar = None
@@ -54,35 +65,24 @@ class project:
         self.avoid_time = 3
 
         # 이미지를 저장하는 변수
-        self.image = None
+        self.image = cv2.imread(self.image_path)
 
         # Grayscale을 위한 참조변수
         self.reference = [500, 500, 500]
 
         # Picar-x 객체의 Lock
         self.picar_lock = threading.Lock()
-        
-        #사진이 저장될 위치
-        self.path = f"HAM/Pictures/picar-x/"
 
-        # 사진 관련 코드
-        self.cap = cv.VideoCapture(0)
-
-        
-        # 라즈베리파이 ip, port
-        self.client_ip = '172.20.25.30'
-        self.client_port = 5555
+        # cv2 객체 생성
+        self.cap = cv2.VideoCapture(0)
 
         # 스레드
         t1 = threading.Thread(target=self.read_data)
         #t2 = threading.Thread(target=self.avoid_question)
-        t3 = threading.Thread(target=self.gray_question)
         t4 = threading.Thread(target=self.send_data)
-
 
         t1.start()
         #t2.start()
-        t3.start()
         t4.start()
 
     # Grayscale에 맞는 데이터를 할당하는 함수
@@ -104,97 +104,61 @@ class project:
 
     # 캘리브레이션을 맞추는 함수
     def offset_picar(self):
-        self.dir_servo_calibrate(self.camera_head_horizontal)
-        self.cam_pan_servo_calibrate(self.motor)
-        self.cam_tilt_servo_calibrate(self.camera_head_vertical)
+        self.px.dir_servo_calibrate(self.camera_head_horizontal)
+        self.px.cam_pan_servo_calibrate(self.motor)
+        self.px.cam_tilt_servo_calibrate(self.camera_head_vertical)
 
-    # 서버에서 사인에 맞는 명령제어값을 받는 함수
-    def receive_header(self):
-        pass
-
-    ###사진 찍는 코드### 
-    def take_pictures(self):
-        now = datetime.datetime.now()
-        filename = now.strftime('%Y-%m-%d-%H-%M-%S')+'.jpg'
-        filepath = os.path.join(self.path, filename)
-        ret, frame = self.cap.read()
-        if ret == True:
-            cv.imwrite(filepath, frame)
-            return filepath
-
+    
     # 서버로 이미지를 전달하는 함수
     def send_data(self):
-        #프레임 크기 지정
-        self.cap.set(cv.CAP_PROP_FRAME_WIDTH, 640)
-        self.cap.set(cv.CAP_PROP_FRAME_HEIGHT, 480)
+        try:
+            self.client_socket.connect(self.server_address)
 
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as client_socket:
-            client_socket.connect(self.server_address)
-            print("연결 성공")
+            t5 = threading.Thread(target=self.read_header)
+            t5.strat()
 
             while True:
-                retval, frame = cv.read()
-                retval, frame = cv.imencode('.jpg', frame, [cv.IMWRITE_JPEG_QUALITY, 90])
-                frame = pickle.dumps(frame) # 데이터 직렬화
-                client_socket.sendall(struct.pack(">L", len(frame)) + frame)
-                print("전송완료")
-                time.sleep(1)
-        #메모리 해제
-        cv.release()         
-        # try:
-
-        #     self.client_socket.connect(self.server_address)
-
-        #     while True:
-        #         route = self.take_pictures()
-        #         if route:
-        #             with open(route, 'rb') as f:
-        #                 image_data = f.read()
-
-        #             image = pickle.dumps(image_data)
-        #             image_size = struct.pack('L', len(image))
-
-        #             self.client_socket.sendall(image_size + image)
-        #         route = self.take_pictures()
-        #         image = pickle.dumps(self.image)
-        #         image_size = struct.pack('L', len(image))
-        #         socket.sendall(image_size + image)
-
-        #         data = b''
-        #         payload_size = struct.calcsize('L')
                 
+                _, image = cv2.imencode('.JPEG', self.image, [cv2.IMWRITE_JPEG_QUALITY, 90])
+                frame_data = pickle.dumps(image)
+                frame_size = len(frame_data)
 
-        #         self.client_socket.send()
-        # except:
-        #     pass
-        # except Exception as e:
-        #     print(f"Error: {e}")
-        # finally:
-        #     self.client_socket.close()
+                self.client_socket.sendall(frame_size.to_bytes(4, byteorder='big'))
+                self.client_socket.sendall(frame_data)
+                sleep(0.1)
 
-            
+        except Exception as e:
+            print(e)
+            sleep(0.1)
+
+    # 서버로부터 헤더값을 받아오는 함수
+    def read_header(self):
+        while True:
+            try:
+                self.AI_header = self.client_socket.recv(1024).decode()
+
+            except Exception as e:
+                print(e)
+
     # Picar-X의 센서 데이터값을 받아오는 함수
     def read_data(self):
         while True:
-            
             try:
                 # 명도 값
                 self.grayscale_value = px.get_grayscale_data()
                 # 거리 값
                 self.ultrasonic_value = round(px.ultrasonic.read(), 2)
 
-                
-                
-                if self.grayscale_flag:
-                    self.get_line_status()
-                    self.align_grayscale()
+                # if self.grayscale_flag:
+                #     self.get_line_status()
+                #     self.align_grayscale()
 
                 print(f' grayscale : {self.grayscale_value} ultrasonic: {self.ultrasonic_value}')
 
                 sleep(0.1)
             
-            except:
-                print('Lock is already acquired')
+            except Exception as e:
+                print(e)
                 sleep(0.1)
 
     # 헤더값에 맞는 기동을 수행하는 함수
