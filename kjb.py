@@ -16,13 +16,13 @@ class project:
 
     def __init__(self, px):
 
-        self.image_path = '/home/picar-x/2024-08-07-14-31-39.jpg'
+        self.image_path = r'/home/picar-x/2024-08-07-14-31-39.jpg'
 
         # 소켓 생성
         self.client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
         # 서버 주소
-        self.server_address = ('172.20.10.10', 5555)
+        self.server_address = ('172.20.25.42', 5555)
 
         # 캘리브레이션을 위한 모터값
         # 카메라 수평
@@ -64,8 +64,8 @@ class project:
         # 회피기동을 수행함에 있어 각속도에 따른 회피시간 - default : 3 (Unit : sec)
         self.avoid_time = 3
 
-        # 이미지를 저장하는 변수
         self.image = cv2.imread(self.image_path)
+        
 
         # Grayscale을 위한 참조변수
         self.reference = [500, 500, 500]
@@ -115,17 +115,20 @@ class project:
             self.client_socket.connect(self.server_address)
 
             t5 = threading.Thread(target=self.read_header)
-            t5.strat()
+            t5.start()
 
             while True:
+                # 이미지를 저장하는 변수
                 
-                _, image = cv2.imencode('.JPEG', self.image, [cv2.IMWRITE_JPEG_QUALITY, 90])
+                a, image = cv2.imencode('.JPG', self.image)
                 frame_data = pickle.dumps(image)
                 frame_size = len(frame_data)
 
+                print(frame_size)
+
                 self.client_socket.sendall(frame_size.to_bytes(4, byteorder='big'))
                 self.client_socket.sendall(frame_data)
-                sleep(0.1)
+                sleep(0.5)
 
         except Exception as e:
             print(e)
@@ -136,7 +139,7 @@ class project:
         while True:
             try:
                 self.AI_header = self.client_socket.recv(1024).decode()
-
+                print(self.AI_header)
             except Exception as e:
                 print(e)
 
