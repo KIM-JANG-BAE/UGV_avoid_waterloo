@@ -14,13 +14,11 @@ class project:
 
     def __init__(self, px):
 
-        self.image_path = '/home/picar-x/2024-08-07-14-31-39.jpg'
-
         # 소켓 생성
         self.client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
         # 서버 주소
-        self.server_address = ('172.20.10.10', 5555)
+        self.server_address = ('172.20.25.42', 5555)
 
         # 캘리브레이션을 위한 모터값
         # 카메라 수평
@@ -63,7 +61,7 @@ class project:
         self.avoid_time = 3
 
         # 이미지를 저장하는 변수
-        self.image = cv2.imread(self.image_path)
+        self.image = None
 
         # Grayscale을 위한 참조변수
         self.reference = [500, 500, 500]
@@ -72,16 +70,16 @@ class project:
         self.picar_lock = threading.Lock()
 
         # cv2 객체 생성
-        #self.cap = cv2.VideoCapture(0)
+        self.cap = cv2.VideoCapture(0)
 
         # 스레드
         t1 = threading.Thread(target=self.read_data)
         #t2 = threading.Thread(target=self.avoid_question)
-        #t4 = threading.Thread(target=self.send_data)
+        t4 = threading.Thread(target=self.send_data)
 
         t1.start()
         #t2.start()
-        #t4.start()
+        t4.start()
 
     # Grayscale에 맞는 데이터를 할당하는 함수
     def get_line_status(self):
@@ -109,17 +107,25 @@ class project:
             self.client_socket.connect(self.server_address)
 
             t5 = threading.Thread(target=self.read_header)
-            t5.strat()
+            t5.start()
 
             while True:
                 
+                ret, self.image = self.cap.read()
+
+                print(ret)
+                print(self.image)
+                if not ret:
+                    continue
+
+
                 _, image = cv2.imencode('.JPEG', self.image, [cv2.IMWRITE_JPEG_QUALITY, 90])
                 frame_data = pickle.dumps(image)
                 frame_size = len(frame_data)
 
                 self.client_socket.sendall(frame_size.to_bytes(4, byteorder='big'))
                 self.client_socket.sendall(frame_data)
-                sleep(0.1)
+                sleep(0.75)
 
         except Exception as e:
             print(e)
@@ -129,7 +135,7 @@ class project:
     def read_header(self):
         while True:
             try:
-                self.AI_header = self.client_socket.recv(1024).decode()
+                self.AI_header = int(self.client_socket.recv(1024).decode())
 
             except Exception as e:
                 print(e)
@@ -163,16 +169,16 @@ class project:
         motor_run = False
 
         if self.control_picar == 'left':
-            self.px.forward(5)
+            self.px.forward(15)
             self.px.cam_pan_servo_calibrate(self.motor+30)
 
         elif self.control_picar == 'right':
-            self.px.forward(5)
+            self.px.forward(15)
             self.px.cam_pan_servo_calibrate(self.motor-30)
             
         elif self.control_picar == 'forward':
             self.offset_picar()
-            self.px.forward(10)
+            self.px.forward(15)
 
         elif self.control_picar == 'back':
             if motor_run == False:
@@ -184,23 +190,24 @@ class project:
 
     #AI 값을 보고 판단하는 함수
     def AI_movement(self):
-        AI_header = 1
-        if AI_header == 0:
+        
+        if self.AI_header == 0:
             self.offset_picar()
             self.px.forward(0)
-        elif AI_header == 1:
-            self.px.forward(5)
-            self.px.cam_pan_servo_calibrate(self.motor+30)
-        elif AI_header == 2:
-            self.px.forward(5)
-            self.px.cam_pan_servo_calibrate(self.motor-30)
-        elif AI_header == 3:
+        elif self.AI_header == 1:
+            self.px.forward(10)
+            self.px.cam_pan_servo_calibrate(self.motor+20)
+        elif self.AI_header == 2:
+            self.px.forward(10)
+            self.px.cam_pan_servo_calibrate(-27)
+        elif self.AI_header == 3:
             self.offset_picar()
             self.px.forward(0)
             sleep(2)
         while True:
             self.grayscale_value = px.get_grayscale_data()
             self.get_line_status()
+            self.px.forward(10)
             print(self.control_picar)
             if self.control_picar != 'disconnected':
                 break
