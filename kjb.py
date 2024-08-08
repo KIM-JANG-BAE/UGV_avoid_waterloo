@@ -7,22 +7,20 @@ import cv2
 import pickle
 import struct
 import sys
-import vilib
 import numpy as np
-from PIL import Image
 
 
 class project:
 
     def __init__(self, px):
 
-        self.image_path = r'/home/picar-x/2024-08-07-14-31-39.jpg'
+        self.image_path = '/home/picar-x/2024-08-07-14-31-39.jpg'
 
         # 소켓 생성
         self.client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
         # 서버 주소
-        self.server_address = ('172.20.25.42', 5555)
+        self.server_address = ('172.20.10.10', 5555)
 
         # 캘리브레이션을 위한 모터값
         # 카메라 수평
@@ -64,8 +62,8 @@ class project:
         # 회피기동을 수행함에 있어 각속도에 따른 회피시간 - default : 3 (Unit : sec)
         self.avoid_time = 3
 
+        # 이미지를 저장하는 변수
         self.image = cv2.imread(self.image_path)
-        
 
         # Grayscale을 위한 참조변수
         self.reference = [500, 500, 500]
@@ -74,31 +72,27 @@ class project:
         self.picar_lock = threading.Lock()
 
         # cv2 객체 생성
-        self.cap = cv2.VideoCapture(0)
+        #self.cap = cv2.VideoCapture(0)
 
         # 스레드
         t1 = threading.Thread(target=self.read_data)
         #t2 = threading.Thread(target=self.avoid_question)
-        t4 = threading.Thread(target=self.send_data)
+        #t4 = threading.Thread(target=self.send_data)
 
         t1.start()
         #t2.start()
-        t4.start()
+        #t4.start()
 
     # Grayscale에 맞는 데이터를 할당하는 함수
     def get_line_status(self):
-        if self.grayscale_value[0] > self.reference[0] and self.grayscale_value[1] > self.reference[1] and self.grayscale_value[2] > self.reference[2]:
+        if self.grayscale_value[0] >= self.reference[0] and self.grayscale_value[1] >= self.reference[1] and self.grayscale_value[2] >= self.reference[2]:
             self.control_picar = 'back'
-
-        elif self.grayscale_value[1] >= self.reference[1]:
-            self.control_picar = 'forward'
-
+        elif self.grayscale_value[0] < self.reference[0] and self.grayscale_value[1] < self.reference[1] and self.grayscale_value[2] < self.reference[2]:
+            self.control_picar = 'disconnected'
         elif self.grayscale_value[0] >= self.reference[0]:
             self.control_picar = 'right'
-
         elif self.grayscale_value[2] >= self.reference[2]:
             self.control_picar = 'left'
-
         else:
             self.control_picar = 'forward'
 
@@ -115,20 +109,17 @@ class project:
             self.client_socket.connect(self.server_address)
 
             t5 = threading.Thread(target=self.read_header)
-            t5.start()
+            t5.strat()
 
             while True:
-                # 이미지를 저장하는 변수
                 
-                a, image = cv2.imencode('.JPG', self.image)
+                _, image = cv2.imencode('.JPEG', self.image, [cv2.IMWRITE_JPEG_QUALITY, 90])
                 frame_data = pickle.dumps(image)
                 frame_size = len(frame_data)
 
-                print(frame_size)
-
                 self.client_socket.sendall(frame_size.to_bytes(4, byteorder='big'))
                 self.client_socket.sendall(frame_data)
-                sleep(0.5)
+                sleep(0.1)
 
         except Exception as e:
             print(e)
@@ -139,7 +130,7 @@ class project:
         while True:
             try:
                 self.AI_header = self.client_socket.recv(1024).decode()
-                print(self.AI_header)
+
             except Exception as e:
                 print(e)
 
@@ -152,9 +143,11 @@ class project:
                 # 거리 값
                 self.ultrasonic_value = round(px.ultrasonic.read(), 2)
 
-                # if self.grayscale_flag:
-                #     self.get_line_status()
-                #     self.align_grayscale()
+                if self.grayscale_flag:
+                    self.get_line_status()
+                    if self.control_picar == 'disconnected':
+                        self.AI_movement()
+                    self.align_grayscale()
 
                 print(f' grayscale : {self.grayscale_value} ultrasonic: {self.ultrasonic_value}')
 
@@ -189,6 +182,28 @@ class project:
                 motor_run = False
                 self.px.stop()
 
+    #AI 값을 보고 판단하는 함수
+    def AI_movement(self):
+        AI_header = 1
+        if AI_header == 0:
+            self.offset_picar()
+            self.px.forward(0)
+        elif AI_header == 1:
+            self.px.forward(5)
+            self.px.cam_pan_servo_calibrate(self.motor+30)
+        elif AI_header == 2:
+            self.px.forward(5)
+            self.px.cam_pan_servo_calibrate(self.motor-30)
+        elif AI_header == 3:
+            self.offset_picar()
+            self.px.forward(0)
+            sleep(2)
+        while True:
+            self.grayscale_value = px.get_grayscale_data()
+            self.get_line_status()
+            print(self.control_picar)
+            if self.control_picar != 'disconnected':
+                break
 
     # 회피기동 여부를 판단하는 함수
     def avoid_question(self):
