@@ -3,14 +3,15 @@ from time import sleep
 import readchar
 import threading
 import socket
-import cv2
+import cv2 as cv
 import pickle
 import struct
+import datetime
+import os 
 
 class project:
 
     def __init__(self, px):
-
         # 소켓 생성
         self.client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
@@ -59,8 +60,14 @@ class project:
 
         # Picar-x 객체의 Lock
         self.picar_lock = threading.Lock()
+        
+        #사진이 저장될 위치
+        self.path = f"HAM/Pictures/picar-x/"
 
+        # 사진 관련 코드
+        self.cap = cv.VideoCapture(0)
 
+        
         # 라즈베리파이 ip, port
         self.client_ip = '172.20.25.30'
         self.client_port = 5555
@@ -104,26 +111,49 @@ class project:
     def receive_header(self):
         pass
 
+    ###사진 찍는 코드### 
+    def take_pictures(self):
+        now = datetime.datetime.now()
+        filename = now.strftime('%Y-%m-%d-%H-%M-%S')+'.jpg'
+        filepath = os.path.join(self.path, filename)
+        ret, frame = self.cap.read()
+        if ret == True:
+            cv.imwrite(filepath, frame)
+            return filepath
+
     # 서버로 이미지를 전달하는 함수
     def send_data(self):
         try:
             self.client_socket.connect(self.server_address)
 
             while True:
+                route = self.take_pictures()
+                if route:
+                    with open(route, 'rb') as f:
+                        image_data = f.read()
+
+                    image = pickle.dumps(image_data)
+                    image_size = struct.pack('L', len(image))
+
+                    self.client_socket.sendall(image_size + image)
+                # route = self.take_pictures()
+                # image = pickle.dumps(self.image)
+                # image_size = struct.pack('L', len(image))
+                # socket.sendall(image_size + image)
+
+                # data = b''
+                # payload_size = struct.calcsize('L')
                 
-                image = pickle.dumps(self.image)
-                image_size = struct.pack('L', len(image))
-                socket.sendall(image_size + image)
 
-                data = b''
-                payload_size = struct.calcsize('L')
-                
+                # self.client_socket.send()
+        # except:
+        #     pass
+        except Exception as e:
+            print(f"Error: {e}")
+        finally:
+            self.client_socket.close()
 
-                self.client_socket.send()
-
-        except:
-            pass
-
+            
     # Picar-X의 센서 데이터값을 받아오는 함수
     def read_data(self):
         while True:
