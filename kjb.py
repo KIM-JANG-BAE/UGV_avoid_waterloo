@@ -31,6 +31,9 @@ class project:
         # 이미지를 저장한 여부에 대한 변수 선언
         self.image_flag = False
 
+        #정지 신호
+        self.stop_t = False
+
         # 차량 할당
         self.px = px
 
@@ -105,7 +108,6 @@ class project:
     def send_data(self):
         try:
             self.client_socket.connect(self.server_address)
-
             t5 = threading.Thread(target=self.read_header)
             t5.start()
 
@@ -117,7 +119,6 @@ class project:
                 print(self.image)
                 if not ret:
                     continue
-
 
                 _, image = cv2.imencode('.JPEG', self.image, [cv2.IMWRITE_JPEG_QUALITY, 90])
                 frame_data = pickle.dumps(image)
@@ -152,6 +153,7 @@ class project:
                 if self.grayscale_flag:
                     self.get_line_status()
                     if self.control_picar == 'disconnected':
+                        self.stop_t = True
                         self.AI_movement()
                     self.align_grayscale()
 
@@ -190,20 +192,44 @@ class project:
 
     #AI 값을 보고 판단하는 함수
     def AI_movement(self):
-        
         if self.AI_header == 0:
             self.offset_picar()
             self.px.forward(0)
+            sleep(1000)
+
         elif self.AI_header == 1:
             self.px.forward(10)
             self.px.cam_pan_servo_calibrate(self.motor+20)
+
         elif self.AI_header == 2:
             self.px.forward(10)
             self.px.cam_pan_servo_calibrate(-27)
+
         elif self.AI_header == 3:
-            self.offset_picar()
-            self.px.forward(0)
-            sleep(2)
+            if self.stop_t == True:
+                self.stop_t = False
+                self.offset_picar()
+                self.px.forward(0)
+                self.px.cam_pan_servo_calibrate(self.motor+20)
+                sleep(2)
+            self.px.forward(10)
+
+        elif self.AI_header == 4:
+            if self.stop_t == True:
+                self.stop_t = False
+                self.offset_picar()
+                self.px.forward(0)
+                self.px.cam_pan_servo_calibrate(-27)
+                sleep(2)
+            self.px.forward(10)
+        elif self.AI_header == 5:
+            if self.stop_t == True:
+                self.stop_t = False
+                self.offset_picar()
+                self.px.forward(0)
+                sleep(2)
+            self.px.forward(10)    
+
         while True:
             self.grayscale_value = px.get_grayscale_data()
             self.get_line_status()
@@ -227,10 +253,10 @@ class project:
                 sleep(0.1)
 
         # 회피기동시, 도로 폭(60cm) 차선 폭(15cm) 차량의 위치 - 차선의 중앙(7.5cm)를 기동에 사용
-        px.forward(2.5)
+        px.forward(10)
         px.set_dir_servo_angle(self.avoid_angle)
         sleep(self.avoid_time)
-
+        
         self.picar_lock.release()
 
 
